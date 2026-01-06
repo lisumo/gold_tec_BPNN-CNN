@@ -17,8 +17,15 @@ venv/
 *.csv
 *.log
 *.doc
+*.docx
 *.png
 scripts/NCFilesList.txt
+# 输出文件
+evaluation_results_bpnn/metrics.txt
+evaluation_results_cnn/metrics.txt
+evaluation_results_fusion/metrics.txt
+evaluation_results/metrics.txt
+
 
 # 模型权重
 *.pth

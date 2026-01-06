@@ -47,6 +47,17 @@ class Config:
         "test_days": 5  # 第 45-50 天 -> 测试集
     }
 
+    # 是否开启陆地遮挡模式
+    ENABLE_LAND_MASKING = True
+
+    # 定义遮挡区域
+    LAND_MASK_REGION = {
+        'lon_min': -60,
+        'lon_max': -50,
+        'lat_min': -30,
+        'lat_max': -10
+    }
+
     # GOLD 数据筛选
     START_YEAR = 2023
     START_DOY = 1
@@ -109,7 +120,7 @@ class Config:
     # 3. 模型超参数 (Model Hyperparameters)
     # =========================================
     MODEL_PARAMS = {
-        'model_mode': 'cnn',  # 可选: 'fusion', 'cnn', 'bpnn'
+        'model_mode': 'fusion',  # 可选: 'fusion', 'cnn', 'bpnn'
 
         'input_shape': None,
         'input_channels': None,
@@ -135,6 +146,10 @@ class Config:
         'attention_scale': 1,
         'use_bpnn_background': True,
         'fusion_weight': 0.6,
+
+        # 平滑损失配置 (Smoothness Loss)
+        'enable_smooth_loss': True,  # 开关：是否启用平滑损失
+        'smooth_loss_weight': 0.02,  # 权重：建议 0.01 ~ 0.1
 
         # 训练参数
         'learning_rate': 0.0015,

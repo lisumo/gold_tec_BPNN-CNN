@@ -117,3 +117,22 @@ class GradientLoss(nn.Module):
         loss_y = self.l1(pred_grad_y * mask_f, target_grad_y * mask_f)
 
         return loss_x + loss_y
+
+class SmoothnessLoss(nn.Module):
+    """
+    平滑一致性损失 (Total Variation Loss)
+    无需真值，仅约束预测图像在空间上的连续性，消除边界突变。
+    """
+
+    def __init__(self):
+        super(SmoothnessLoss, self).__init__()
+
+    def forward(self, pred):
+        # pred shape: (B, 1, H, W)
+        # 计算水平方向梯度 (h_diff) 和 垂直方向梯度 (v_diff)
+        h_diff = torch.abs(pred[:, :, :, 1:] - pred[:, :, :, :-1])
+        v_diff = torch.abs(pred[:, :, 1:, :] - pred[:, :, :-1, :])
+
+        # 计算平均变分
+        loss = torch.mean(h_diff) + torch.mean(v_diff)
+        return loss

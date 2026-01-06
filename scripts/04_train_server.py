@@ -13,7 +13,8 @@ sys.path.append(project_root)
 
 from config import Config
 from src.utils.common import setup_gpu
-from src.utils.metrics import masked_loss, GradientLoss
+# 【修改】导入 SmoothnessLoss
+from src.utils.metrics import masked_loss, GradientLoss, SmoothnessLoss
 from src.models.fusion import TECFusionCNNModel
 from src.utils.options import parse_args
 from src.utils.logger import Logger
@@ -119,9 +120,6 @@ def run_server_training():
         # 随机划分逻辑 (兼容旧代码)
         logger.log("⏹ [Mode] 使用随机划分数据集")
         X_spatial, X_time, y, mit_masks, gold_rad_masks = load_and_process_data(base_path)
-
-        # ... (此处省略随机划分的具体实现，建议尽量使用周期性划分) ...
-        # 如果需要完整兼容，请保留您原来的随机划分代码块
         pass
 
     train_loader = DataLoader(train_subset, batch_size=params['batch_size'], shuffle=True, pin_memory=True)
@@ -137,8 +135,11 @@ def run_server_training():
     model = TECFusionCNNModel(model_config).to(device)
     optimizer = optim.AdamW(model.parameters(), lr=params['learning_rate'], weight_decay=params['weight_decay'])
 
-    # 初始化梯度损失
+    # 初始化损失函数
     grad_criterion = GradientLoss(device)
+    # 【新增】初始化平滑损失函数
+    smooth_criterion = SmoothnessLoss().to(device)
+
     grad_weight = 0.1  # 梯度损失权重
 
     # 断点续训逻辑
@@ -163,21 +164,48 @@ def run_server_training():
             b_spatial, b_time, b_y, b_mit_mask, b_gold_mask = [b.to(device) for b in batch]
             optimizer.zero_grad()
 
-            # 【核心修改】统一调用接口，无论是什么模式，model都会返回三个值
-            # outputs 是最终用于计算 loss 的预测值 (Fusion / CNN / BPNN)
+            # 【统一调用接口】无论是 Fusion / CNN / BPNN，model 都会返回三个值
             outputs, _, _ = model(b_spatial, b_time)
 
-            # 计算交集掩码
+            # 计算原始交集掩码
             intersection_mask = b_mit_mask & b_gold_mask
 
-            # 1. 基础像素损失 (SmoothL1)
+            # 【陆地遮挡实验逻辑】
+            if getattr(Config, 'ENABLE_LAND_MASKING', False):
+                region = Config.LAND_MASK_REGION
+                H, W = intersection_mask.shape[2], intersection_mask.shape[3]
+
+                lon_step = (Config.MASK_LON_MAX - Config.MASK_LON_MIN) / W
+                lat_step = (Config.MASK_LAT_MAX - Config.MASK_LAT_MIN) / H
+
+                c_min = int((region['lon_min'] - Config.MASK_LON_MIN) / lon_step)
+                c_max = int((region['lon_max'] - Config.MASK_LON_MIN) / lon_step)
+                r_min = int((region['lat_min'] - Config.MASK_LAT_MIN) / lat_step)
+                r_max = int((region['lat_max'] - Config.MASK_LAT_MIN) / lat_step)
+
+                c_min = max(0, min(W, c_min))
+                c_max = max(0, min(W, c_max))
+                r_min = max(0, min(H, r_min))
+                r_max = max(0, min(H, r_max))
+
+                if c_max > c_min and r_max > r_min:
+                    intersection_mask[:, :, r_min:r_max, c_min:c_max] = False
+
+            # 1. 基础像素损失
             loss_pixel = masked_loss(outputs, b_y, intersection_mask, beta=params['loss_beta'])
 
             # 2. 结构梯度损失
             loss_grad = grad_criterion(outputs, b_y, intersection_mask)
 
-            # 总损失
-            loss = loss_pixel + grad_weight * loss_grad
+            # 3. 平滑损失 (Smoothness Loss)
+            # 如果配置中开启，则计算并累加
+            loss_smooth = torch.tensor(0.0, device=device)
+            if params.get('enable_smooth_loss', False):
+                loss_smooth = smooth_criterion(outputs)
+                # 总损失 = 像素 + 梯度 + 平滑
+                loss = loss_pixel + (grad_weight * loss_grad) + (params.get('smooth_loss_weight', 0.05) * loss_smooth)
+            else:
+                loss = loss_pixel + (grad_weight * loss_grad)
 
             loss.backward()
             optimizer.step()
@@ -192,7 +220,7 @@ def run_server_training():
             for batch in val_loader:
                 b_spatial, b_time, b_y, b_mit_mask, b_gold_mask = [b.to(device) for b in batch]
 
-                # 【核心修改】统一调用接口
+                # 统一调用
                 outputs, _, _ = model(b_spatial, b_time)
 
                 intersection_mask = b_mit_mask & b_gold_mask
@@ -200,7 +228,14 @@ def run_server_training():
                 v_loss_pixel = masked_loss(outputs, b_y, intersection_mask, beta=params['loss_beta'])
                 v_loss_grad = grad_criterion(outputs, b_y, intersection_mask)
 
-                batch_loss = v_loss_pixel + grad_weight * v_loss_grad
+                # 验证时也加上平滑损失，保持指标一致性（可选，也可不加）
+                if params.get('enable_smooth_loss', False):
+                    v_loss_smooth = smooth_criterion(outputs)
+                    batch_loss = v_loss_pixel + (grad_weight * v_loss_grad) + (
+                                params.get('smooth_loss_weight', 0.05) * v_loss_smooth)
+                else:
+                    batch_loss = v_loss_pixel + (grad_weight * v_loss_grad)
+
                 val_loss += batch_loss.item() * b_spatial.size(0)
 
         val_loss /= len(val_subset)
