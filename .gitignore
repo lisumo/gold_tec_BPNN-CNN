@@ -1,0 +1,42 @@
+# Python 缓存
+__pycache__/
+*.py[cod]
+
+# 虚拟环境
+.venv1/
+venv/
+.env/
+
+# IDE 配置
+.idea/
+.vscode/
+
+# 数据文件 (不要上传这些!)
+*.nc
+*.obj
+*.csv
+*.log
+*.doc
+*.docx
+*.png
+*.json
+*.pkl
+*.sh
+*.txt
+scripts/NCFilesList.txt
+guide.txt
+
+result/
+Major Revision/
+Minor Revision
+submission/
+参考文献/
+科技论文/
+
+
+# 模型权重
+*.pth
+
+# 操作系统文件
+.DS_Store
+Thumbs.db

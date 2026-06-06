@@ -1,0 +1,27 @@
+数据预处理：
+python scripts/01_process_raw_data.py
+数据集构建：
+python scripts/02_build_dataset.py
+模型训练本地：
+python scripts/03_train_model.py
+模型训练服务器：
+python scripts/04_train_server.py
+模型评估：
+python scripts/05_evaluate_server.py
+
+
+权限：chmod +x run_experiments.sh
+
+运行：./run_experiments.sh
+离线运行：nohup ./run_experiments.sh > download.log 2>&1 &
+查看实时日志: tail -f logs/fusion_v2_server_nohup.log
+删除旧日志文件：rm -rf logs/fusion_v2_server
+
+开离线窗口：tmux new -s my_experiment
+关闭窗口：ctrl+B → D
+回到窗口：tmux attach -t my_experiment
+
+服务器进程管理：
+查看进程：nvidia-smi
+查看进程详细信息：ps -f -p 进程号1 进程号2...
+结束进程：kill -9 进程号1 进程号2...
